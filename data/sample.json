@@ -1,9 +1,27 @@
 {
   "event_id": "092102-004-sample-001",
   "event_type": "TIMING_RECEIVED",
-  "aggregate_type": "race_entry",
-  "aggregate_id": "marathon_award_settlement-001",
+  "aggregate_type": "timing_evidence",
+  "aggregate_id": "timing-E1001",
   "occurred_at": "2026-09-20T12:00:00+08:00",
   "version": 1,
-  "summary": "马拉松奖金核算台领域样例"
+  "summary": "0001 号选手官方计时证据入库（联调样例）",
+  "payload": {
+    "entry_id": "E1001",
+    "bib": "0001",
+    "timing_source": "chip_and_gun",
+    "evidence_ref": "TIMEOFFICE/0001/2026",
+    "gun_rank": 1,
+    "net_rank": 1,
+    "gun_time_ms": 7740000,
+    "net_time_ms": 7740000
+  },
+  "provenance": {
+    "source_type": "official_timing",
+    "document_ref": "TIMEOFFICE/0001/2026",
+    "issued_by": "太原马拉松计时中心",
+    "captured_at": "2026-09-20T12:00:00+08:00",
+    "signed": false
+  },
+  "caused_by": []
 }

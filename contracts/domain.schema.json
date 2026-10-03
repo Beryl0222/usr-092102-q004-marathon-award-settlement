@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "马拉松奖金核算台领域事件",
+  "$id": "https://marathon-awards/contracts/domain.schema.json",
+  "title": "马拉松奖金核算台领域事件契约",
+  "description": "事件只增不改（append-only）。所有暂缓、确认、改判都必须保留原始来源 provenance 与签署裁决链 caused_by；改判只追加更正事件，不得删除或覆盖既有事实。",
   "type": "object",
   "required": [
     "event_id",
@@ -9,20 +11,52 @@
     "aggregate_id",
     "occurred_at",
     "version",
-    "summary"
+    "summary",
+    "payload",
+    "provenance"
   ],
   "properties": {
     "event_id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "全局唯一、幂等键；重复 event_id 必须被拒绝，不得计算两次。"
     },
     "event_type": {
       "type": "string",
       "enum": [
+        "RACE_ENTRY_REGISTERED",
+        "COMPETITION_REGISTERED",
+        "EVENT_PROGRAM_DEFINED",
+        "RULEBOOK_PUBLISHED",
+        "AWARD_SCHEDULE_PUBLISHED",
         "TIMING_RECEIVED",
+        "BIB_CHECKPOINT_RECORDED",
+        "RESULT_LIST_PUBLISHED",
+        "RESULT_LIST_AMENDED",
+        "RESULT_LIST_FROZEN",
         "ELIGIBILITY_REVIEWED",
+        "FACE_MISMATCH_FLAGGED",
+        "BIB_DISPUTE_OPENED",
+        "DOPING_CASE_OPENED",
+        "DOPING_RESULT_ENTERED",
+        "APPEAL_OPENED",
+        "APPEAL_DECIDED",
+        "INVESTIGATION_DECIDED",
+        "DISQUALIFICATION_ADJUDICATED",
+        "RECORD_PERFORMANCE_DECLARED",
+        "RECORD_RATIFIED",
+        "RECORD_REVOKED",
         "AWARD_CALCULATED",
+        "ENTITLEMENT_SUSPENDED",
+        "ENTITLEMENT_HOLD_RESOLVED",
+        "ENTITLEMENT_FROZEN",
+        "ENTITLEMENT_VOIDED",
+        "TAX_DETAILS_SUBMITTED",
+        "WITHHOLDING_CALCULATED",
+        "PAYMENT_BATCH_OPENED",
         "PAYMENT_RELEASED",
+        "PAYMENT_REVERSED",
+        "MAKEUP_PAYMENT_RELEASED",
         "RESULT_REVISED"
       ]
     },
@@ -30,9 +64,14 @@
       "type": "string",
       "enum": [
         "race_entry",
+        "race_edition",
         "timing_evidence",
+        "result_list",
+        "investigation",
+        "course_record",
         "award_entitlement",
-        "settlement_entry"
+        "settlement_entry",
+        "payment_batch"
       ]
     },
     "aggregate_id": {
@@ -41,16 +80,1378 @@
     },
     "occurred_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "description": "领域事实发生时刻（含时区）。同一聚合内必须随 version 单调递增。"
     },
     "version": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "description": "聚合内乐观并发版本，从 1 起连续；重复或跳号写入必须被拒绝。"
     },
     "summary": {
       "type": "string",
       "minLength": 1
+    },
+    "payload": {
+      "$ref": "#/$defs/payload",
+      "description": "事件正文，结构按 event_type 见 $defs.payload 约定。"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance",
+      "description": "原始来源：官方计时证据、签署裁决文件或系统操作人。任何状态变更都可追溯到来源。"
+    },
+    "caused_by": {
+      "type": "array",
+      "description": "因果链：本事件所依据的先前事件 event_id（如改判依据的签署裁决、递补依据的榜单修订）。",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "default": []
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "description": "证据出处。source_type=official_timing 只能陈述计时事实；取消资格等处罚只允许来自 signed_decision。",
+      "required": [
+        "source_type",
+        "document_ref",
+        "captured_at"
+      ],
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": [
+            "official_timing",
+            "chip_vendor_feed",
+            "face_recognition_system",
+            "jury_decision",
+            "doping_authority",
+            "appeal_tribunal",
+            "race_organization",
+            "finance_operation",
+            "tax_authority",
+            "athlete_submission",
+            "system"
+          ]
+        },
+        "document_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issued_by": {
+          "type": "string"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "content_hash": {
+          "type": "string"
+        },
+        "signed": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "signed_decision": {
+      "type": "object",
+      "title": "有权裁决",
+      "description": "只有携带签署裁决的事件才能产生取消资格、撤销纪录等法律效果。",
+      "required": [
+        "decision_id",
+        "deciding_body",
+        "decided_at",
+        "signed_by",
+        "document_ref",
+        "outcome"
+      ],
+      "properties": {
+        "decision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deciding_body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decided_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signed_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "money": {
+      "type": "object",
+      "required": [
+        "amount_minor",
+        "currency"
+      ],
+      "properties": {
+        "amount_minor": {
+          "type": "integer",
+          "description": "金额最小单位整数（如分）"
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        }
+      },
+      "additionalProperties": false
+    },
+    "list_entry": {
+      "type": "object",
+      "required": [
+        "entry_id",
+        "bib",
+        "rank"
+      ],
+      "properties": {
+        "entry_id": {
+          "type": "string"
+        },
+        "bib": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tied_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "并列名次（两人并列第2则后续为第4）"
+        },
+        "tie_group": {
+          "type": "string",
+          "description": "并列组标识，同组按规则均分或共享"
+        },
+        "time_ms": {
+          "type": "integer"
+        },
+        "nationality": {
+          "type": "string",
+          "description": "ISO 国籍码"
+        },
+        "annotation": {
+          "type": "string",
+          "description": "中立标注，不产生处罚效果"
+        }
+      },
+      "additionalProperties": true
+    },
+    "list_change": {
+      "type": "object",
+      "required": [
+        "op",
+        "entry_id",
+        "reason",
+        "source_ref"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "withdraw",
+            "reinstate",
+            "correct",
+            "annotate"
+          ]
+        },
+        "entry_id": {
+          "type": "string"
+        },
+        "before": {
+          "$ref": "#/$defs/list_entry"
+        },
+        "after": {
+          "$ref": "#/$defs/list_entry"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "decision_id": {
+          "type": "string",
+          "description": "withdraw/reinstate 必须引用已签署裁决"
+        }
+      },
+      "additionalProperties": true
+    },
+    "award_line_item": {
+      "type": "object",
+      "required": [
+        "award_code",
+        "award_kind",
+        "amount"
+      ],
+      "properties": {
+        "award_code": {
+          "type": "string",
+          "description": "如 PLACE_M、CN_TOP8、COURSE_RECORD_M"
+        },
+        "award_kind": {
+          "type": "string",
+          "enum": [
+            "place",
+            "special",
+            "record"
+          ]
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "rule_ref": {
+          "type": "string",
+          "description": "适用规则条款（规则版本内编号）"
+        },
+        "tie_group": {
+          "type": "string"
+        },
+        "tie_share_note": {
+          "type": "string"
+        },
+        "stack_group": {
+          "type": "string",
+          "description": "同组奖项按规则只取最高（不叠加）"
+        },
+        "record_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "freeze_basis": {
+      "type": "object",
+      "title": "可冻结的获奖权益依据",
+      "description": "冻结时采用的榜单（按奖项种类、含修订号）、规则版本与资格快照；付款金额必须可据此重新算出。",
+      "required": [
+        "list_refs",
+        "schedule_version",
+        "rulebook_version",
+        "eligibility_refs"
+      ],
+      "properties": {
+        "list_id": {
+          "type": "string",
+          "description": "兼容字段：主榜单 id"
+        },
+        "list_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "list_refs": {
+          "type": "object",
+          "description": "按奖项种类采用的榜单及修订号",
+          "properties": {
+            "place": {
+              "$ref": "#/$defs/list_ref"
+            },
+            "special": {
+              "$ref": "#/$defs/list_ref"
+            },
+            "record": {
+              "$ref": "#/$defs/list_ref"
+            }
+          },
+          "additionalProperties": true
+        },
+        "schedule_version": {
+          "type": "string"
+        },
+        "rulebook_version": {
+          "type": "string"
+        },
+        "eligibility_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "payload": {
+      "type": "object",
+      "description": "各 event_type 的 payload 约定（required 字段；未列出的字段允许扩展）。"
+    },
+    "list_ref": {
+      "type": "object",
+      "required": [
+        "list_id",
+        "list_revision",
+        "rank_basis"
+      ],
+      "properties": {
+        "list_id": {
+          "type": "string"
+        },
+        "list_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rank_basis": {
+          "type": "string",
+          "enum": [
+            "gun_time",
+            "net_time"
+          ]
+        },
+        "wave": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RACE_ENTRY_REGISTERED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "bib",
+              "name",
+              "division_id",
+              "registered_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "COMPETITION_REGISTERED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "edition_id",
+              "name",
+              "race_date"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "EVENT_PROGRAM_DEFINED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "edition_id",
+              "divisions"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RULEBOOK_PUBLISHED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "rulebook_version",
+              "effective_from"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "AWARD_SCHEDULE_PUBLISHED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "schedule_version",
+              "rulebook_version",
+              "effective_from",
+              "items"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "TIMING_RECEIVED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "bib",
+              "timing_source",
+              "evidence_ref"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "BIB_CHECKPOINT_RECORDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "bib",
+              "point_id",
+              "at",
+              "device_ref"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RESULT_LIST_PUBLISHED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "list_id",
+              "division_id",
+              "rank_basis",
+              "revision",
+              "entries"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RESULT_LIST_AMENDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "list_id",
+              "from_revision",
+              "to_revision",
+              "changes"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RESULT_LIST_FROZEN"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "list_id",
+              "revision",
+              "frozen_at",
+              "frozen_by"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ELIGIBILITY_REVIEWED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "nationality",
+              "nationality_verified",
+              "eligibility_status",
+              "reviewed_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "FACE_MISMATCH_FLAGGED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "entry_id",
+              "bib",
+              "evidence_ref",
+              "flagged_at"
+            ],
+            "properties": {
+              "automatic_disqualification": {
+                "const": false,
+                "description": "人脸异常只能进入替跑调查，不得直接取消资格"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "BIB_DISPUTE_OPENED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "entry_id",
+              "bib",
+              "opened_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "DOPING_CASE_OPENED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "entry_id",
+              "sample_ref",
+              "opened_at",
+              "authority"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "DOPING_RESULT_ENTERED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "entry_id",
+              "result",
+              "document_ref",
+              "entered_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "APPEAL_OPENED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "appeal_id",
+              "entry_id",
+              "grounds",
+              "filed_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "APPEAL_DECIDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "appeal_id",
+              "entry_id",
+              "outcome",
+              "decision"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "INVESTIGATION_DECIDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "investigation_kind",
+              "outcome",
+              "decision"
+            ],
+            "properties": {
+              "investigation_kind": {
+                "type": "string",
+                "enum": [
+                  "substitute_runner",
+                  "bib_dispute",
+                  "other"
+                ]
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "no_violation",
+                  "substitute_runner_confirmed",
+                  "bib_transfer_confirmed",
+                  "other_violation"
+                ]
+              },
+              "decision": {
+                "$ref": "#/$defs/signed_decision"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "DISQUALIFICATION_ADJUDICATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "case_id",
+              "entry_id",
+              "decision"
+            ],
+            "properties": {
+              "decision": {
+                "$ref": "#/$defs/signed_decision"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RECORD_PERFORMANCE_DECLARED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "record_id",
+              "division_id",
+              "entry_id",
+              "time_ms",
+              "list_id",
+              "list_revision",
+              "declared_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RECORD_RATIFIED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "record_id",
+              "ratified_at",
+              "ratified_by",
+              "document_ref"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RECORD_REVOKED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "record_id",
+              "revoked_at",
+              "decision"
+            ],
+            "properties": {
+              "decision": {
+                "$ref": "#/$defs/signed_decision"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "AWARD_CALCULATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "calc_id",
+              "entry_id",
+              "division_id",
+              "basis",
+              "line_items",
+              "gross_amount",
+              "calc_status"
+            ],
+            "properties": {
+              "basis": {
+                "$ref": "#/$defs/freeze_basis"
+              },
+              "line_items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/award_line_item"
+                }
+              },
+              "gross_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "calc_status": {
+                "type": "string",
+                "enum": [
+                  "provisional",
+                  "confirmed",
+                  "superseded"
+                ]
+              },
+              "supersedes_calc_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ENTITLEMENT_SUSPENDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "hold_id",
+              "entry_id",
+              "reason_code",
+              "case_ref",
+              "suspended_at"
+            ],
+            "properties": {
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "doping",
+                  "appeal",
+                  "bib_dispute",
+                  "substitute_runner_investigation",
+                  "record_pending_ratification",
+                  "administrative"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ENTITLEMENT_HOLD_RESOLVED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "hold_id",
+              "entry_id",
+              "resolution",
+              "resolved_at"
+            ],
+            "properties": {
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "lifted",
+                  "disqualified"
+                ]
+              },
+              "decision_ref": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ENTITLEMENT_FROZEN"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "freeze_id",
+              "entry_id",
+              "calc_id",
+              "basis",
+              "gross_amount",
+              "frozen_at",
+              "frozen_by"
+            ],
+            "properties": {
+              "basis": {
+                "$ref": "#/$defs/freeze_basis"
+              },
+              "gross_amount": {
+                "$ref": "#/$defs/money"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ENTITLEMENT_VOIDED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "calc_id",
+              "decision_ref",
+              "voided_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "TAX_DETAILS_SUBMITTED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "tax_residency",
+              "id_document_ref",
+              "submitted_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "WITHHOLDING_CALCULATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "entry_id",
+              "freeze_id",
+              "gross_amount",
+              "rate_bps",
+              "withholding_amount",
+              "net_amount",
+              "calculated_at"
+            ],
+            "properties": {
+              "gross_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "withholding_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "net_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "rate_bps": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "PAYMENT_BATCH_OPENED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "batch_id",
+              "currency",
+              "opened_at",
+              "entry_ids"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "PAYMENT_RELEASED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "payment_id",
+              "batch_id",
+              "entry_id",
+              "freeze_id",
+              "gross_amount",
+              "withholding_amount",
+              "net_amount",
+              "paid_at"
+            ],
+            "properties": {
+              "gross_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "withholding_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "net_amount": {
+                "$ref": "#/$defs/money"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "PAYMENT_REVERSED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "reversal_id",
+              "payment_id",
+              "entry_id",
+              "amount",
+              "reason_code",
+              "reversed_at"
+            ],
+            "properties": {
+              "amount": {
+                "$ref": "#/$defs/money"
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "disqualification",
+                  "overpayment",
+                  "duplicate_payment",
+                  "administrative"
+                ]
+              },
+              "decision_ref": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "MAKEUP_PAYMENT_RELEASED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "makeup_id",
+              "entry_id",
+              "freeze_id",
+              "gross_amount",
+              "withholding_amount",
+              "net_amount",
+              "reason_code",
+              "related_payment_ids",
+              "paid_at"
+            ],
+            "properties": {
+              "gross_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "withholding_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "net_amount": {
+                "$ref": "#/$defs/money"
+              },
+              "reason_code": {
+                "type": "string",
+                "enum": [
+                  "promotion",
+                  "underpayment",
+                  "reinstated",
+                  "administrative"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "RESULT_REVISED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "required": [
+              "revision_id",
+              "entry_id",
+              "trigger_event_id",
+              "before_snapshot",
+              "after_snapshot",
+              "ledger_effect",
+              "revised_at"
+            ],
+            "properties": {
+              "ledger_effect": {
+                "type": "string",
+                "enum": [
+                  "clawback",
+                  "makeup",
+                  "none"
+                ]
+              },
+              "before_snapshot": {
+                "type": "object"
+              },
+              "after_snapshot": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
